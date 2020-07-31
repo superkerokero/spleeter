@@ -39,7 +39,6 @@ __license__ = 'MIT License'
 logger = logging.getLogger("spleeter")
 
 
-
 def get_backend(backend):
     assert backend in ["auto", "tensorflow", "librosa"]
     if backend == "auto":
@@ -50,7 +49,7 @@ def get_backend(backend):
 class Separator(object):
     """ A wrapper class for performing separation. """
 
-    def __init__(self, params_descriptor, MWF=False, stft_backend="auto", multiprocess=True):
+    def __init__(self, params_descriptor, MWF=False, stft_backend="auto", multiprocess=True, model_dir=""):
         """ Default constructor.
 
         :param params_descriptor: Descriptor for TF params to be used.
@@ -58,6 +57,9 @@ class Separator(object):
         """
 
         self._params = load_configuration(params_descriptor)
+        # overwrite model_dir
+        if model_dir != "":
+            self._params['model_dir'] = model_dir
         self._sample_rate = self._params['sample_rate']
         self._MWF = MWF
         self._tf_graph = tf.Graph()
@@ -123,7 +125,7 @@ class Separator(object):
         data = np.asfortranarray(data)
         N = self._params["frame_length"]
         H = self._params["frame_step"]
-        
+
         win = hann(N, sym=False)
         fstft = istft if inverse else stft
         win_len_arg = {"win_length": None,
@@ -131,7 +133,8 @@ class Separator(object):
         n_channels = data.shape[-1]
         out = []
         for c in range(n_channels):
-            d = np.concatenate((np.zeros((N, )), data[:, c], np.zeros((N, )))) if not inverse else data[:, :, c].T
+            d = np.concatenate((np.zeros((N, )), data[:, c], np.zeros(
+                (N, )))) if not inverse else data[:, :, c].T
             s = fstft(d, hop_length=H, window=win, center=False, **win_len_arg)
             if inverse:
                 s = s[N:N+length]
@@ -140,7 +143,6 @@ class Separator(object):
         if len(out) == 1:
             return out[0]
         return np.concatenate(out, axis=2-inverse)
-
 
     def _get_input_provider(self):
         if self._input_provider is None:
@@ -154,13 +156,15 @@ class Separator(object):
 
     def _get_builder(self):
         if self._builder is None:
-            self._builder = EstimatorSpecBuilder(self._get_features(), self._params)
+            self._builder = EstimatorSpecBuilder(
+                self._get_features(), self._params)
         return self._builder
 
     def _get_session(self):
         if self._session is None:
             saver = tf.train.Saver()
-            latest_checkpoint = tf.train.latest_checkpoint(get_default_model_dir(self._params['model_dir']))
+            latest_checkpoint = tf.train.latest_checkpoint(
+                get_default_model_dir(self._params['model_dir']))
             self._session = tf.Session()
             saver.restore(self._session, latest_checkpoint)
         return self._session
@@ -182,9 +186,11 @@ class Separator(object):
                 stft = stft[:, :2]
 
             sess = self._get_session()
-            outputs = sess.run(outputs, feed_dict=self._get_input_provider().get_feed_dict(features, stft, audio_id))
+            outputs = sess.run(outputs, feed_dict=self._get_input_provider(
+            ).get_feed_dict(features, stft, audio_id))
             for inst in self._get_builder().instruments:
-                out[inst] = self._stft(outputs[inst], inverse=True, length=waveform.shape[0])
+                out[inst] = self._stft(
+                    outputs[inst], inverse=True, length=waveform.shape[0])
             return out
 
     def separate(self, waveform, audio_descriptor=""):
@@ -230,9 +236,9 @@ class Separator(object):
             duration=duration,
             sample_rate=self._sample_rate)
         sources = self.separate(waveform, audio_descriptor)
-        self.save_to_file(  sources, audio_descriptor, destination,
-                            filename_format, codec, audio_adapter,
-                            bitrate, synchronous)
+        self.save_to_file(sources, audio_descriptor, destination,
+                          filename_format, codec, audio_adapter,
+                          bitrate, synchronous)
 
     def save_to_file(
             self, sources, audio_descriptor, destination,
@@ -268,7 +274,7 @@ class Separator(object):
                 instrument=instrument,
                 foldername=foldername,
                 codec=codec,
-                ))
+            ))
             directory = os.path.dirname(path)
             if not os.path.exists(directory):
                 os.makedirs(directory)
@@ -286,6 +292,7 @@ class Separator(object):
                     bitrate))
                 self._tasks.append(task)
             else:
-                audio_adapter.save(path, data, self._sample_rate, codec, bitrate)
+                audio_adapter.save(
+                    path, data, self._sample_rate, codec, bitrate)
         if synchronous and self._pool:
             self.join()
